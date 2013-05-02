@@ -5,8 +5,14 @@
 #include <ios>
 #include <map>
 #include <string>
+#include <thread>
+#include <mutex>
 
 using namespace std;
+
+mutex ctrMutex;
+string data;
+map<string, int> wordcounts;
 
 string readFile(const char* filename) {
     ifstream in;
@@ -16,15 +22,7 @@ string readFile(const char* filename) {
     return sstr.str();
 }
 
-int main(int argc, char **argv) {
-    if(argc == 1) {
-        cout << "Einzulesende Datei angeben\n" << endl;
-        return 0;
-    }
-    int processes = 4;
-    string data = readFile(argv[1]);
-    //cout << data << endl;
-    
+void cleanData() {
     int i = 0;
     while(i < data.length()) {
         string strsign = data.substr(i, 2);
@@ -55,26 +53,64 @@ int main(int argc, char **argv) {
         }
         i++;
     }
-    //cout << "Neue saubere Version:\n" << endl;
-    //cout << data << endl;
-    
-    map<string, int> wordcounts;
+    data.append(new char(' '));
+}
+
+void wordcounter(int start, int end) {
     string word;
-    for(int j = 0; j < data.length(); j++) {
+    for(int i = start; i > -1; i--) {
+        if(data.at(i) == ' ')
+            break;
+        else
+            start = i;
+    }
+    for(int j = start; j < end; j++) {
         char sign = data.at(j);
         if(sign == ' ') {
             if(word.empty())
                 continue;
+            ctrMutex.lock();
             try {
                 int count = wordcounts.at(word);
                 wordcounts[word] = ++count;
             } catch (const std::out_of_range& oor) {
                 wordcounts[word] = 1;
             }
+            ctrMutex.unlock();
             word = "";
         } else {
             word += sign;
         }
+    }
+}
+
+int main(int argc, char **argv) {
+    if(argc == 1) {
+        cout << "Einzulesende Datei angeben\n" << endl;
+        return 0;
+    }
+    int processCount = 4;
+    data = readFile(argv[1]);
+    //cout << data << endl;
+    
+    cleanData();
+    
+    //cout << "Neue saubere Version:\n" << endl;
+    //cout << data << endl;
+    
+    int threadlength = data.length() / processCount;
+    thread processes[processCount];
+    for(int i = 0; i < processCount; i++) {
+        int start = i * threadlength;
+        int end;
+        if((i + 1) == processCount)
+            end = data.length();
+        else
+            end = (i + 1) * threadlength;
+        processes[i] = thread(wordcounter, start, end);
+    }
+    for(int i = 0; i < processCount; i++) {
+        processes[i].join();
     }
     cout << "\nWortanzahl:\n" << endl;
     
