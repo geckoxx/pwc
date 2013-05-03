@@ -9,6 +9,7 @@
 #include <string>
 #include <thread>
 #include <mutex>
+#include <queue>
 
 using namespace std;
 
@@ -16,8 +17,10 @@ const int processCount = 4;
 mutex ctrMutex;
 string data;
 unordered_map<string, int> wordcounts;
+queue<string> words;
 
 string* txtParts;
+int threadsDone = 0;
 
 string readFile(const char* filename) {
     ifstream in;
@@ -97,18 +100,14 @@ void wordcounter(int start, int end) {
             if(word.empty())
                 continue;
             ctrMutex.lock();
-            try {
-                int count = wordcounts.at(word);
-                wordcounts[word] = ++count;
-            } catch (const std::out_of_range& oor) {
-                wordcounts[word] = 1;
-            }
+            words.push(word);
             ctrMutex.unlock();
             word = "";
         } else {
             word += sign;
         }
     }
+    ++threadsDone;
 }
 
 template<typename A, typename B>
@@ -149,6 +148,18 @@ int main(int argc, char **argv) {
             end = (i + 1) * threadlength;
         processes[i] = thread(wordcounter, start, end);
     }
+    while(threadsDone < processCount || !words.empty()) {
+        string word = words.front();
+        try {
+            int count = wordcounts.at(word);
+            wordcounts[word] = ++count;
+        } catch (const std::out_of_range& oor) {
+            wordcounts[word] = 1;
+        }
+        ctrMutex.lock();
+        words.pop();
+        ctrMutex.unlock();
+    }
     for(int i = 0; i < processCount; i++) {
         processes[i].join();
     }
@@ -159,6 +170,6 @@ int main(int argc, char **argv) {
         cout << iter->second << ": " << iter->first << endl;
     }
     
-    cin.get();
+    //cin.get();
     return 0;
 }
