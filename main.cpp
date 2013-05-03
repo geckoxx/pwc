@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <ios>
 #include <map>
+#include <algorithm>
 #include <string>
 #include <thread>
 #include <mutex>
@@ -84,6 +85,20 @@ void wordcounter(int start, int end) {
     }
 }
 
+template<typename A, typename B>
+pair<B,A> flip_pair(const pair<A,B> &p)
+{
+    return pair<B,A>(p.second, p.first);
+}
+
+template<typename A, typename B>
+multimap<B,A> flip_map(const map<A,B> &src)
+{
+    multimap<B,A> dst;
+    transform(src.begin(), src.end(), std::inserter(dst, dst.begin()), flip_pair<A,B>);
+    return dst;
+}
+
 int main(int argc, char **argv) {
     if(argc == 1) {
         cout << "Einzulesende Datei angeben\n" << endl;
@@ -114,8 +129,9 @@ int main(int argc, char **argv) {
     }
     cout << "\nWortanzahl:\n" << endl;
     
-    for(map<string, int>::iterator iter = wordcounts.begin(); iter!=wordcounts.end(); ++iter) {
-        cout << iter->first << ": " << iter->second << endl;
+    multimap<int, string> sortedMap = flip_map(wordcounts);
+    for(multimap<int, string>::iterator iter = --sortedMap.end(); iter!=sortedMap.begin(); --iter) {
+        cout << iter->second << ": " << iter->first << endl;
     }
     return 0;
 }
