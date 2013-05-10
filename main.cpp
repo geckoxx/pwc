@@ -7,20 +7,14 @@
 #include <unordered_map>
 #include <algorithm>
 #include <string>
-#include <thread>
-#include <mutex>
-#include <queue>
+#include <omp.h>
+#include <parallel/algorithm>
 
 using namespace std;
 
-const int processCount = 4;
-mutex ctrMutex;
 string data;
 unordered_map<string, int> wordcounts;
-queue<string> words;
-
-string* txtParts;
-int threadsDone = 0;
+map<int, vector<string>> int2words;
 
 string readFile(const char* filename) {
     ifstream in;
@@ -30,98 +24,117 @@ string readFile(const char* filename) {
     return sstr.str();
 }
 
-void cleanDataThread(int index) {
-    string* threadData = &txtParts[index];
-    int i = 0;
-    while(i < threadData->length()) {
-        string strsign = threadData->substr(i, 2);
-        char sign = threadData->at(i);
-        if(sign == '\n') {
-            threadData->replace(i, 1, " ");
-        } else if(strsign == "Ä" || strsign == "ä") {
-            threadData->replace(i, 1, "ä");
-            i++;
-        } else if(strsign == "Ö" || strsign == "ö") {
-            threadData->replace(i, 1, "ö");
-            i++;
-        } else if(strsign == "Ü" || strsign == "ü") {
-            threadData->replace(i, 1, "ü");
-            i++;
-        } else if(strsign == "ß") {
-            threadData->replace(i, 1, "ß");
-            i++;
-        } else if(sign != ' ' && (sign < 65 || (sign > 90 && sign < 97) || sign > 122)) { //Sonderzeichen entfernen
-            threadData->replace(i, 1, "");
-            i--;
-        } else if(sign > 64 && sign < 91) { //große Buchstaben
-            string newsign;
-            newsign += (char)(sign + 32); //kleine Schreibweise
-            threadData->replace(i, 1, newsign);
-        }
-        i++;
+void ompClean() {
+    string* strParts;
+    int threads;
+    #pragma omp parallel
+    {
+        strParts = new string[omp_get_num_threads()];
     }
-}
-
-void cleanData() {
-    string tp[processCount];
-    txtParts = tp;
-    int threadlength = data.length() / processCount;
-    thread processes[processCount];
-    for(int i = 0; i < processCount; i++) {
-        int start = i * threadlength;
+    #pragma omp parallel
+    {
+        threads = omp_get_num_threads();
+        int threadlength = data.length() / omp_get_num_threads();
+        int start = omp_get_thread_num() * threadlength;
         int end;
-        if((i + 1) == processCount)
+        if((omp_get_thread_num() + 1) == omp_get_num_threads())
             end = data.length();
         else
-            end = (i + 1) * threadlength;
-        txtParts[i] = data.substr(start, end - start);
-        processes[i] = thread(cleanDataThread, i);
+            end = (omp_get_thread_num() + 1) * threadlength;
+        strParts[omp_get_thread_num()] = data.substr(start, end - start);
+
+        string* threadData = &strParts[omp_get_thread_num()];
+        int i = 0;
+        while(i < threadData->length()) {
+            string strsign = threadData->substr(i, 2);
+            char sign = threadData->at(i);
+            if(sign == '\n') {
+                threadData->replace(i, 1, " ");
+            } else if(strsign == "Ä" || strsign == "ä") {
+                threadData->replace(i, 1, "ä");
+                i++;
+            } else if(strsign == "Ö" || strsign == "ö") {
+                threadData->replace(i, 1, "ö");
+                i++;
+            } else if(strsign == "Ü" || strsign == "ü") {
+                threadData->replace(i, 1, "ü");
+                i++;
+            } else if(strsign == "ß") {
+                threadData->replace(i, 1, "ß");
+                i++;
+            } else if(sign != ' ' && (sign < 65 || (sign > 90 && sign < 97) || sign > 122)) { //Sonderzeichen entfernen
+                threadData->replace(i, 1, "");
+                i--;
+            } else if(sign > 64 && sign < 91) { //große Buchstaben
+                string newsign;
+                newsign += (char)(sign + 32); //kleine Schreibweise
+                threadData->replace(i, 1, newsign);
+            }
+            i++;
+        }
     }
+
     data = "";
-    for(int i = 0; i < processCount; i++) {
-        processes[i].join();
-        data.append(txtParts[i]);
+    for(int i = 0; i < threads; i++) {
+        data.append(strParts[i]);
     }
-    
     data.append(new char(' '));
 }
 
-void wordcounter(int start, int end) {
-    string word;
-    for(int i = start; i > -1; i--) {
-        if(data.at(i) == ' ')
-            break;
+void ompWordcounter() {
+    #pragma omp parallel
+    {
+        int threadlength = data.length() / omp_get_num_threads();
+        int start = omp_get_thread_num() * threadlength;
+        int end;
+        if((omp_get_thread_num() + 1) == omp_get_num_threads())
+            end = data.length();
         else
-            start = i;
-    }
-    for(int j = start; j < end; j++) {
-        char sign = data.at(j);
-        if(sign == ' ') {
-            if(word.empty())
-                continue;
-            ctrMutex.lock();
-            words.push(word);
-            ctrMutex.unlock();
-            word = "";
-        } else {
-            word += sign;
+            end = (omp_get_thread_num() + 1) * threadlength;
+
+        string word;
+        for(int i = start; i > -1; i--) {
+            if(data.at(i) == ' ')
+                break;
+            else
+                start = i;
+        }
+        for(int j = start; j < end; j++) {
+            char sign = data.at(j);
+            if(sign == ' ') {
+                if(word.empty())
+                    continue;
+                #pragma omp critical
+                if(wordcounts.end() == wordcounts.find(word))
+                    wordcounts[word] = 1;
+                else {
+                    int count = wordcounts[word];
+                    wordcounts[word] = ++count;
+                }
+                /*try {
+                    int count = wordcounts.at(word);
+                    wordcounts[word] = ++count;
+                } catch (const std::out_of_range& oor) {
+                    wordcounts[word] = 1;
+                }*/
+                #pragma omp end critical
+                word = "";
+            } else {
+                word += sign;
+            }
         }
     }
-    ++threadsDone;
 }
 
-template<typename A, typename B>
-pair<B,A> flip_pair(const pair<A,B> &p)
-{
-    return pair<B,A>(p.second, p.first);
-}
+void mySort(std::pair<const string, int>& pair) {
 
-template<typename A, typename B>
-multimap<B,A> flip_map(const unordered_map<A,B> &src)
-{
-    multimap<B,A> dst;
-    transform(src.begin(), src.end(), std::inserter(dst, dst.begin()), flip_pair<A,B>);
-    return dst;
+    if(int2words.end() == int2words.find(pair.second)) {
+        vector<string> newWord;
+        newWord.push_back(pair.first);
+        int2words[pair.second] = newWord;
+    } else {
+        int2words[pair.second].push_back(pair.first);
+    }
 }
 
 int main(int argc, char **argv) {
@@ -130,46 +143,23 @@ int main(int argc, char **argv) {
         return 0;
     }
     data = readFile(argv[1]);
-    //cout << data << endl;
-    
-    cleanData();
-    
-    //cout << "Neue saubere Version:\n" << endl;
-    //cout << data << endl;
-    
-    int threadlength = data.length() / processCount;
-    thread processes[processCount];
-    for(int i = 0; i < processCount; i++) {
-        int start = i * threadlength;
-        int end;
-        if((i + 1) == processCount)
-            end = data.length();
-        else
-            end = (i + 1) * threadlength;
-        processes[i] = thread(wordcounter, start, end);
-    }
-    while(threadsDone < processCount || !words.empty()) {
-        string word = words.front();
-        try {
-            int count = wordcounts.at(word);
-            wordcounts[word] = ++count;
-        } catch (const std::out_of_range& oor) {
-            wordcounts[word] = 1;
-        }
-        ctrMutex.lock();
-        words.pop();
-        ctrMutex.unlock();
-    }
-    for(int i = 0; i < processCount; i++) {
-        processes[i].join();
-    }
+
+    ompClean();
+
+    ompWordcounter();
     cout << "\nWortanzahl:\n" << endl;
-    
-    multimap<int, string> sortedMap = flip_map(wordcounts);
-    for(multimap<int, string>::iterator iter = sortedMap.begin(); iter!=sortedMap.end(); ++iter) {
-        cout << iter->second << ": " << iter->first << endl;
+
+    __gnu_parallel::for_each(wordcounts.begin(), wordcounts.end(), mySort);
+
+    for(map<int, vector<string>>::iterator iter = int2words.begin(); iter!=int2words.end(); ++iter) {
+        cout << iter->first << ": ";
+        for(int i = 0; i < iter->second.size(); i++) {
+            cout << iter->second.at(i);
+            if(i < (iter->second.size() - 1))
+                cout << ", ";
+        }
+        cout << endl;
     }
-    
-    //cin.get();
+
     return 0;
 }
