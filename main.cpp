@@ -23,6 +23,12 @@ clock_t par_time;
 clock_t par_clean_time;
 clock_t par_count_time;
 
+clock_t middle_in_time;
+clock_t middle_seq_time;
+clock_t middle_par_time;
+clock_t middle_par_clean_time;
+clock_t middle_par_count_time;
+
 string readFile(const char* filename) {
     ifstream in;
     in.open(filename);
@@ -144,55 +150,88 @@ void mySort(std::pair<const string, int>& pair) {
 }
 
 int main(int argc, char **argv) {
-    
-    seq_time = 0;
-    par_time = 0;
-    
-    clock_t comp_start = clock();
-    if(argc == 1) {
-        cout << "Einzulesende Datei angeben\n" << endl;
+
+
+    if(argc < 2) {
+        cout << "Einzulesende Datei und Durchlaufanzahl angeben\n" << endl;
         return 0;
     }
-    
-    clock_t start = clock();
-    data = readFile(argv[1]);
-    in_time = clock() - start;
-    seq_time += in_time;
 
-    ompClean();
+    middle_in_time = 0;
+    middle_seq_time = 0;
+    middle_par_time = 0;
+    middle_par_clean_time = 0;
+    middle_par_count_time = 0;
+    clock_t middle_comp_end = 0;
 
-    start = clock();
-    ompWordcounter();
-    par_count_time = (clock() - start);
-    par_time += par_count_time;
-
-    start = clock();
-    __gnu_parallel::for_each(wordcounts.begin(), wordcounts.end(), mySort);
-    seq_time += (clock() - start);
-
-    start = clock();
-    cout << "\nWortanzahl:\n" << endl;
-    for(map<int, vector<string>>::iterator iter = int2words.begin(); iter!=int2words.end(); ++iter) {
-        if(iter->first < 1000)
-            continue;
-        cout << iter->first << ": ";
-        for(int i = 0; i < iter->second.size(); i++) {
-            cout << iter->second.at(i);
-            if(i < (iter->second.size() - 1))
-                cout << ", ";
-        }
-        cout << endl;
-    }
-    seq_time += (clock() - start);
-    
     long clock_per_sec = CLOCKS_PER_SEC / 1000;
-    clock_t comp_end = clock() - comp_start;
-    cout << endl << "Zeit des sequenzellen Teils: " << (long)(seq_time / clock_per_sec) << "ms" << endl;
-    cout << "    davon für Einlesen: " << (long)(in_time / clock_per_sec) << "ms" << endl;
-    cout << "Zeit des parallelen Teils: " << (long)(par_time / clock_per_sec) << "ms" << endl;
-    cout << "    davon für Textbereinigung: " << (long)(par_clean_time / clock_per_sec) << "ms" << endl;
-    cout << "    davon für Wortzählung: " << (long)(par_count_time / clock_per_sec) << "ms" << endl;
-    cout << "Gesamtzeit: " << (long)(comp_end / clock_per_sec) << "ms" << endl;
 
+    int runs = atoi(argv[2]);
+    for(int i = 0; i < runs; i++) {
+        data = "";
+        wordcounts.clear();
+        int2words.clear();
+        in_time = 0;
+        seq_time = 0;
+        par_time = 0;
+        par_clean_time = 0;
+        par_count_time = 0;
+
+        clock_t comp_start = clock();
+
+        clock_t start = clock();
+        data = readFile(argv[1]);
+        in_time = clock() - start;
+        seq_time += in_time;
+
+        ompClean();
+
+        start = clock();
+        ompWordcounter();
+        par_count_time = (clock() - start);
+        par_time += par_count_time;
+
+        start = clock();
+        __gnu_parallel::for_each(wordcounts.begin(), wordcounts.end(), mySort);
+        seq_time += (clock() - start);
+
+        start = clock();
+        cout << "\nWortanzahl:\n" << endl;
+        for(map<int, vector<string>>::iterator iter = int2words.begin(); iter!=int2words.end(); ++iter) {
+            if(iter->first < 1000)
+                continue;
+            cout << iter->first << ": ";
+            for(int i = 0; i < iter->second.size(); i++) {
+                cout << iter->second.at(i);
+                if(i < (iter->second.size() - 1))
+                    cout << ", ";
+            }
+            cout << endl;
+        }
+        seq_time += (clock() - start);
+
+        clock_t comp_end = clock() - comp_start;
+        cout << endl << "Zeit des sequenzellen Teils: " << (long)(seq_time / clock_per_sec) << "ms" << endl;
+        cout << "    davon für Einlesen: " << (long)(in_time / clock_per_sec) << "ms" << endl;
+        cout << "Zeit des parallelen Teils: " << (long)(par_time / clock_per_sec) << "ms" << endl;
+        cout << "    davon für Textbereinigung: " << (long)(par_clean_time / clock_per_sec) << "ms" << endl;
+        cout << "    davon für Wortzählung: " << (long)(par_count_time / clock_per_sec) << "ms" << endl;
+        cout << "Gesamtzeit: " << (long)(comp_end / clock_per_sec) << "ms" << endl;
+
+        middle_in_time = (middle_in_time * i + in_time) / (i + 1);
+        middle_seq_time = (middle_seq_time * i + seq_time) / (i + 1);
+        middle_par_time = (middle_par_time * i + par_time) / (i + 1);
+        middle_par_clean_time = (middle_par_clean_time * i + par_clean_time) / (i + 1);
+        middle_par_count_time = (middle_par_count_time * i + par_count_time) / (i + 1);
+        middle_comp_end = (middle_comp_end * i + comp_end) / (i + 1);
+    }
+
+    cout << endl << endl << "Durchschnittswerte nach " << runs << " Durchläufen:" << endl;
+    cout << endl << "Zeit des sequenzellen Teils: " << (long)(middle_seq_time / clock_per_sec) << "ms" << endl;
+    cout << "    davon für Einlesen: " << (long)(middle_in_time / clock_per_sec) << "ms" << endl;
+    cout << "Zeit des parallelen Teils: " << (long)(middle_par_time / clock_per_sec) << "ms" << endl;
+    cout << "    davon für Textbereinigung: " << (long)(middle_par_clean_time / clock_per_sec) << "ms" << endl;
+    cout << "    davon für Wortzählung: " << (long)(middle_par_count_time / clock_per_sec) << "ms" << endl;
+    cout << "Gesamtzeit: " << (long)(middle_comp_end / clock_per_sec) << "ms" << endl;
     return 0;
 }
