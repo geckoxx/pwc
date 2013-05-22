@@ -211,7 +211,8 @@ int main(int argc, char **argv) {
         seq_time += (clock() - start);
 
         clock_t comp_end = clock() - comp_start;
-        cout << endl << "Zeit des sequenzellen Teils: " << (long)(seq_time / clock_per_sec) << "ms" << endl;
+        cout << endl << "Durchlaufnr.: " << (i + 1) << endl;
+        cout << "Zeit des sequenzellen Teils: " << (long)(seq_time / clock_per_sec) << "ms" << endl;
         cout << "    davon für Einlesen: " << (long)(in_time / clock_per_sec) << "ms" << endl;
         cout << "Zeit des parallelen Teils: " << (long)(par_time / clock_per_sec) << "ms" << endl;
         cout << "    davon für Textbereinigung: " << (long)(par_clean_time / clock_per_sec) << "ms" << endl;
