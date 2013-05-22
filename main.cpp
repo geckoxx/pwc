@@ -9,12 +9,19 @@
 #include <string>
 #include <omp.h>
 #include <parallel/algorithm>
+#include <ctime>
 
 using namespace std;
 
 string data;
 unordered_map<string, int> wordcounts;
 map<int, vector<string>> int2words;
+
+clock_t in_time;
+clock_t seq_time;
+clock_t par_time;
+clock_t par_clean_time;
+clock_t par_count_time;
 
 string readFile(const char* filename) {
     ifstream in;
@@ -25,6 +32,7 @@ string readFile(const char* filename) {
 }
 
 void ompClean() {
+    clock_t clean_par = clock();
     string* strParts;
     int threads;
     #pragma omp parallel
@@ -73,12 +81,16 @@ void ompClean() {
             i++;
         }
     }
+    clock_t clean_par_end = clock();
+    par_clean_time = (clean_par_end - clean_par);
+    par_time += par_clean_time;
 
     data = "";
     for(int i = 0; i < threads; i++) {
         data.append(strParts[i]);
     }
     data.append(new char(' '));
+    seq_time += (clock() - clean_par_end);
 }
 
 void ompWordcounter() {
@@ -111,12 +123,6 @@ void ompWordcounter() {
                     int count = wordcounts[word];
                     wordcounts[word] = ++count;
                 }
-                /*try {
-                    int count = wordcounts.at(word);
-                    wordcounts[word] = ++count;
-                } catch (const std::out_of_range& oor) {
-                    wordcounts[word] = 1;
-                }*/
                 #pragma omp end critical
                 word = "";
             } else {
@@ -138,20 +144,37 @@ void mySort(std::pair<const string, int>& pair) {
 }
 
 int main(int argc, char **argv) {
+    
+    seq_time = 0;
+    par_time = 0;
+    
+    clock_t comp_start = clock();
     if(argc == 1) {
         cout << "Einzulesende Datei angeben\n" << endl;
         return 0;
     }
+    
+    clock_t start = clock();
     data = readFile(argv[1]);
+    in_time = clock() - start;
+    seq_time += in_time;
 
     ompClean();
 
+    start = clock();
     ompWordcounter();
-    cout << "\nWortanzahl:\n" << endl;
+    par_count_time = (clock() - start);
+    par_time += par_count_time;
 
+    start = clock();
     __gnu_parallel::for_each(wordcounts.begin(), wordcounts.end(), mySort);
+    seq_time += (clock() - start);
 
+    start = clock();
+    cout << "\nWortanzahl:\n" << endl;
     for(map<int, vector<string>>::iterator iter = int2words.begin(); iter!=int2words.end(); ++iter) {
+        if(iter->first < 1000)
+            continue;
         cout << iter->first << ": ";
         for(int i = 0; i < iter->second.size(); i++) {
             cout << iter->second.at(i);
@@ -160,6 +183,16 @@ int main(int argc, char **argv) {
         }
         cout << endl;
     }
+    seq_time += (clock() - start);
+    
+    long clock_per_sec = CLOCKS_PER_SEC / 1000;
+    clock_t comp_end = clock() - comp_start;
+    cout << endl << "Zeit des sequenzellen Teils: " << (long)(seq_time / clock_per_sec) << "ms" << endl;
+    cout << "    davon für Einlesen: " << (long)(in_time / clock_per_sec) << "ms" << endl;
+    cout << "Zeit des parallelen Teils: " << (long)(par_time / clock_per_sec) << "ms" << endl;
+    cout << "    davon für Textbereinigung: " << (long)(par_clean_time / clock_per_sec) << "ms" << endl;
+    cout << "    davon für Wortzählung: " << (long)(par_count_time / clock_per_sec) << "ms" << endl;
+    cout << "Gesamtzeit: " << (long)(comp_end / clock_per_sec) << "ms" << endl;
 
     return 0;
 }
