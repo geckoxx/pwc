@@ -152,7 +152,7 @@ void mySort(std::pair<const string, int>& pair) {
 int main(int argc, char **argv) {
 
 
-    if(argc < 2) {
+    if(argc < 3) {
         cout << "Einzulesende Datei und Durchlaufanzahl angeben\n" << endl;
         return 0;
     }
